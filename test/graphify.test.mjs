@@ -215,7 +215,10 @@ test("hooks: a real commit triggers the background update (git runs the hook)", 
   const why = () => {
     const out = path.join(s.dir, "graphify-out"), read = (f) => { try { return fs.readFileSync(f, "utf8"); } catch (e) { return `(${e.code})`; } };
     const manual = spawnSync("sh", [path.join(s.dir, ".git", "hooks", "post-commit")], { cwd: s.dir, env: s.env, encoding: "utf8" });
-    return `files: ${fs.readdirSync(out).join(",")}\nlog: ${read(path.join(out, ".agy-update.log"))}\nhook run by hand: ${manual.status} ${manual.stdout}${manual.stderr}\nhook:\n${read(path.join(s.dir, ".git", "hooks", "post-commit"))}`;
+    const rt = path.join(s.env.AGY_REVIEW_HOME, "runtime", "scripts", "agy-review.mjs");
+    const direct = spawnSync(process.execPath, [rt, "--graphify", "update"], { cwd: s.dir, env: { ...s.env, GIT_DIR: undefined }, encoding: "utf8", timeout: 60_000 });
+    const tools = spawnSync("sh", ["-c", "command -v bun; command -v node; echo PATH=$PATH"], { env: s.env, encoding: "utf8" });
+    return `runtime exists: ${fs.existsSync(rt)}\ntools: ${tools.stdout}\ndirect run: ${direct.status} ${direct.stdout}${direct.stderr}\nfiles: ${fs.readdirSync(out).join(",")}\nlog: ${read(path.join(out, ".agy-update.log"))}\nhook run by hand: ${manual.status} ${manual.stdout}${manual.stderr}\nhook:\n${read(path.join(s.dir, ".git", "hooks", "post-commit"))}`;
   };
   assert.equal(s.status()?.ok, true, `the hook started an update that finished\n${s.status() ? "" : why()}`);
   assert.equal(s.calls().find((c) => c.args[0] === "extract").backend, "ollama");
