@@ -676,7 +676,9 @@ async function main() {
   return review(o);
 }
 
-if (process.argv[1] && fileURLToPath(import.meta.url) === path.resolve(process.argv[1])) {
+// Node resolves symlinks for import.meta.url but not for argv[1] (macOS: /var is /private/var), so compare real paths.
+const real = (p) => { try { return fs.realpathSync(p); } catch { return path.resolve(p); } };
+if (process.argv[1] && real(fileURLToPath(import.meta.url)) === real(process.argv[1])) {
   main().catch((e) => {
     if (e instanceof UsageError) fail(e.message, EXIT.usage);
     fail(`[agy-review] unexpected error: ${e.stack ?? e}`);
