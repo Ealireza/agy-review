@@ -90,7 +90,8 @@ function probeCaps(model) {
     child.stdout.on("data", on);
     child.stderr.on("data", on);
     child.on("error", () => finish(null));
-    child.on("close", () => finish(parseEffortError(buf) ?? null));
+    // Exit 0 without an effort error means the model took "max" (and answered): that is a result worth caching too.
+    child.on("close", (code) => finish(parseEffortError(buf) ?? (code === 0 ? { kind: "all" } : null)));
   });
 }
 

@@ -612,7 +612,9 @@ async function graphifyCmd(o) {
       let rows = gfy.doctor(root);
       const missingPkg = rows.find((r) => r.name.startsWith("openai package") && !r.ok);
       if (missingPkg && o.yes) {
-        const uv = sh("uv", ["--version"]);
+        // Add the package to the environment graphify really runs from: its launcher's path says whether pipx or uv owns it.
+        const where = sh(process.platform === "win32" ? "where" : "which", [gfy.graphifyArgv().cmd]).stdout.split("\n")[0]?.trim() ?? "";
+        const uv = /pipx/i.test(where) ? { status: 1 } : sh("uv", ["--version"]);
         const cmd = uv.status === 0 ? ["uv", ["tool", "install", "--force", "graphifyy[openai]"]] : ["pipx", ["inject", "graphifyy", "openai"]];
         out(`Adding the openai package to graphify's environment: ${cmd[0]} ${cmd[1].join(" ")}`);
         const r = spawnSync(cmd[0], cmd[1], { stdio: "inherit" });

@@ -57,7 +57,12 @@ export function graphifyVersion() {
 // The python that graphify itself runs on: it, not ours, must be able to `import openai`.
 function graphifyPython(root) {
   if (process.env.AGY_GRAPHIFY_PYTHON) return process.env.AGY_GRAPHIFY_PYTHON;
-  try { const p = fs.readFileSync(path.join(root, OUT, ".graphify_python"), "utf8").trim(); if (p) return p; } catch { /* not written */ }
+  // graphify-out/ can be committed, so this file is untrusted input: it is only used when it names a real python outside the repository.
+  try {
+    const p = fs.readFileSync(path.join(root, OUT, ".graphify_python"), "utf8").trim();
+    const inside = path.relative(path.resolve(root), path.resolve(p));
+    if (p && path.isAbsolute(p) && /^python[\d.]*(\.exe)?$/i.test(path.basename(p)) && fs.existsSync(p) && inside.startsWith("..") && !path.isAbsolute(inside)) return p;
+  } catch { /* not written */ }
   const { cmd, pre } = graphifyArgv();
   if (pre.length && /^python/i.test(cmd)) return cmd;
   const where = spawnSync(process.platform === "win32" ? "where" : "which", [cmd], { encoding: "utf8" }).stdout.split("\n")[0]?.trim();
@@ -94,12 +99,16 @@ function hooksDir(root) {
   return path.resolve(root, r.stdout.trim());
 }
 
-const hookBlock = (event) => `${START}
+// `script` is the absolute path of the runtime copy, written with forward slashes: Git for Windows runs hooks with sh, which reads
+// C:/Users/x/... fine and may not have the same HOME as Node. AGY_REVIEW_HOME still overrides it at run time.
+const shQuote = (s) => `'${s.replaceAll("\\", "/").replaceAll("'", "'\\''")}'`;
+const hookBlock = (event, script) => `${START}
 # Installed by: agy-review --graphify hook-install
 # Updates the graphify graph in the background with Antigravity: no Claude or Codex tokens, no API key.
 # Skip once: AGY_GRAPHIFY_SKIP=1 git ...      Remove: agy-review --graphify hook-uninstall
 if [ -z "$AGY_GRAPHIFY_SKIP" ] && [ -z "$GRAPHIFY_SKIP_HOOK" ]${event === "post-checkout" ? ' && [ "$3" = "1" ]' : ""}; then
-  _AGYR="\${AGY_REVIEW_HOME:-$HOME/.agy-review}/runtime/scripts/agy-review.mjs"
+  _AGYR=${shQuote(script)}
+  [ -n "$AGY_REVIEW_HOME" ] && _AGYR="$AGY_REVIEW_HOME/runtime/scripts/agy-review.mjs"
   if [ -f "$_AGYR" ]; then
     if command -v bun >/dev/null 2>&1; then bun "$_AGYR" --graphify update --detach --quiet >/dev/null 2>&1 || true
     elif command -v node >/dev/null 2>&1; then node "$_AGYR" --graphify update --detach --quiet >/dev/null 2>&1 || true
@@ -133,7 +142,8 @@ export async function hookInstall({ root, pluginRoot, keepGraphifyHook = false }
     // graphify's own hooks rebuild the code graph only, and ours does that too (and more). Two writers on one graph would race, so
     // ours replaces theirs. `graphify hook install` restores them.
     const r = await run(["hook", "uninstall"], { cwd: root });
-    notes.push(r.status === 0 ? "graphify's own git hooks removed (ours do the same work and more)" : "could not remove graphify's own hooks (graphify missing?)");
+    if (r.status !== 0) throw new Error(`could not remove graphify's own git hooks (graphify hook uninstall exited ${r.status}); two updaters would race. Fix that, or pass --keep-graphify-hook`);
+    notes.push("graphify's own git hooks removed (ours do the same work and more)");
   }
   const runtime = installRuntime(pluginRoot);
   // Our log, lock and status files stay out of `git status` without touching the project's .gitignore (local to this clone).
@@ -147,7 +157,7 @@ export async function hookInstall({ root, pluginRoot, keepGraphifyHook = false }
     const f = path.join(dir, ev);
     let text = fs.existsSync(f) ? fs.readFileSync(f, "utf8") : "#!/bin/sh\n";
     if (!text.startsWith("#!")) text = "#!/bin/sh\n" + text;
-    text = stripBlock(text, START, END).replace(/\s*$/, "\n") + "\n" + hookBlock(ev);
+    text = stripBlock(text, START, END).replace(/\s*$/, "\n") + "\n" + hookBlock(ev, path.join(runtime, "scripts", "agy-review.mjs"));
     fs.writeFileSync(f, text, { mode: 0o755 });
     try { fs.chmodSync(f, 0o755); } catch { /* not meaningful on Windows */ }
   }
@@ -166,7 +176,10 @@ export async function hookUninstall({ root, restoreGraphify = false }) {
     removed.push(ev);
   }
   let restored = false;
-  if (restoreGraphify) restored = (await run(["hook", "install"], { cwd: root })).status === 0;
+  if (restoreGraphify) {
+    restored = (await run(["hook", "install"], { cwd: root })).status === 0;
+    if (!restored) throw new Error(`our hooks were removed (${removed.join(", ") || "none"}) but graphify's own hooks could not be restored; run: graphify hook install`);
+  }
   return { removed, restored };
 }
 
@@ -213,24 +226,28 @@ export function writeRules(root) {
 
 // ---------------------------------------------------------------- the update itself
 
-const alive = (pid) => { try { process.kill(pid, 0); return true; } catch { return false; } };
+// EPERM means the process exists but belongs to someone else: still alive.
+const alive = (pid) => { try { process.kill(pid, 0); return true; } catch (e) { return e.code === "EPERM"; } };
 
 function acquire(root) {
   fs.mkdirSync(path.join(root, OUT), { recursive: true });
   const lock = path.join(root, OUT, ".agy-update.lock");
   const mine = JSON.stringify({ pid: process.pid, at: Date.now(), owner: crypto.randomUUID() });
-  for (let attempt = 0; attempt < 2; attempt++) {
-    try { fs.writeFileSync(lock, mine, { flag: "wx" }); break; } catch (e) {
+  for (let attempt = 0; attempt < 5; attempt++) {
+    try { fs.writeFileSync(lock, mine, { flag: "wx" }); return () => { try { if (fs.readFileSync(lock, "utf8") === mine) fs.rmSync(lock, { force: true }); } catch { /* already gone */ } }; } catch (e) {
       if (e.code !== "EEXIST") throw e;
-      let cur = null;
-      try { cur = JSON.parse(fs.readFileSync(lock, "utf8")); } catch { /* unreadable: treat as stale */ }
-      // A live owner keeps the lock for as long as an extraction may legitimately run (3 h); only a dead owner's lock is taken over.
-      if (cur && alive(cur.pid) && Date.now() - cur.at < 4 * 3600_000) { fs.writeFileSync(path.join(root, OUT, ".agy-update.again"), String(Date.now())); return null; }
-      fs.rmSync(lock, { force: true });
-      if (attempt) return null;
     }
+    let raw, age, cur = null;
+    try { raw = fs.readFileSync(lock, "utf8"); age = Date.now() - fs.statSync(lock).mtimeMs; } catch { continue; } // vanished: try again
+    try { cur = JSON.parse(raw); } catch { /* empty or half written */ }
+    // A live owner keeps the lock for as long as an extraction may legitimately run (3 h). A file that cannot be parsed yet is a lock
+    // somebody is writing this very moment: it counts as held for a few seconds.
+    const held = cur ? alive(cur.pid) && Date.now() - cur.at < 4 * 3600_000 : age < 10_000;
+    if (held) { fs.writeFileSync(path.join(root, OUT, ".agy-update.again"), String(Date.now())); return null; }
+    // Dead owner: remove exactly the lock we examined, never a newer one a competing process just created.
+    try { if (fs.readFileSync(lock, "utf8") === raw) fs.rmSync(lock, { force: true }); } catch { /* already gone */ }
   }
-  return () => { try { if (fs.readFileSync(lock, "utf8") === mine) fs.rmSync(lock, { force: true }); } catch { /* already gone */ } };
+  return null;
 }
 
 function logger(root, quiet) {
@@ -251,13 +268,13 @@ export async function update(opts) {
   if (bad.length) throw new UsageError(bad.map((r) => `${r.name}: ${r.detail}`).join("\n"));
   const hasGraph = fs.existsSync(path.join(root, OUT, "graph.json"));
   if (!hasGraph && !full) return { skipped: "no graph yet: build it once with  --graphify update --full" };
-  const release = acquire(root);
+  let release = acquire(root);
   if (!release) return { skipped: "another update is running; it will run once more when it finishes" };
   const log = logger(root, quiet);
   const t0 = Date.now();
   let shim;
   try {
-    for (let round = 0; round < 3; round++) {
+    for (let round = 0; round < 5; round++) {
       fs.rmSync(path.join(root, OUT, ".agy-update.again"), { force: true });
       shim = await startShim({ model: settings.model, effort: settings.effort ?? "low", concurrency: settings.concurrency ?? 3, timeoutMin: 15, cwd: root, debugDir: debug ? path.join(root, OUT, ".agy-debug") : undefined });
       // Pin every LLM-using step to the local agy server so graphify can never fall back to the coding agent or a paid key.
@@ -286,10 +303,15 @@ export async function update(opts) {
       fs.writeFileSync(path.join(root, OUT, ".agy-update.json"), JSON.stringify(result, null, 2));
       log(`done in ${result.duration_s}s: ${summary.trim() || "no changes"}; ${st.calls} agy call(s), ${st.input_tokens} in / ${st.output_tokens} out tokens on Antigravity, 0 on Claude/Codex`);
       await shim.stop(); shim = null;
-      if (!fs.existsSync(path.join(root, OUT, ".agy-update.again"))) return result;
+      release();
+      if (!fs.existsSync(path.join(root, OUT, ".agy-update.again"))) { release = () => {}; return result; }
+      // Someone queued a run while we worked. Take the lock back; if another process already has it, that one consumes the marker.
+      const next = acquire(root);
+      if (!next) { release = () => {}; return result; }
+      release = next;
       log("a commit landed during the update: running once more");
     }
-    return { ok: true, note: "stopped after 3 rounds" };
+    return { ok: true, note: "stopped after 5 rounds; the next git event runs the pending update" };
   } catch (e) {
     try { fs.writeFileSync(path.join(root, OUT, ".agy-update.json"), JSON.stringify({ ok: false, at: new Date().toISOString(), error: String(e.message ?? e).slice(0, 500) }, null, 2)); } catch { /* ignore */ }
     throw e;
