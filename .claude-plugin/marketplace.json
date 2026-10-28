@@ -7,7 +7,7 @@
       "name": "agy-review",
       "source": "./plugins/agy-review",
       "description": "Antigravity (agy) code review of local git changes: read-only repo access, no permission prompts.",
-      "version": "1.0.0",
+      "version": "1.0.1",
       "author": { "name": "Ealireza" }
     }
   ]

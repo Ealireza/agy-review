@@ -1,5 +1,5 @@
 {
   "name": "readonly-review",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "PreToolUse guard that keeps headless agy code reviews read-only. Active only when the prompt contains AGY_READONLY_REVIEW."
 }

@@ -1,6 +1,6 @@
 {
   "name": "agy-review",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "private": true,
   "description": "Antigravity (agy) code review for Claude Code and Codex: read-only repo access, no permission prompts.",
   "license": "MIT",

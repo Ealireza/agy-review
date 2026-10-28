@@ -9,6 +9,14 @@ export const CATEGORIES = ["correctness", "security", "reliability", "error-hand
 
 export class UsageError extends Error {}
 
+// 1 if a is newer than b, -1 if older, 0 if equal. Ignores any pre-release suffix.
+export function compareVersions(a, b) {
+  const p = (v) => String(v).replace(/^v/, "").split("-")[0].split(".").map((n) => parseInt(n, 10) || 0);
+  const [x, y] = [p(a), p(b)];
+  for (let i = 0; i < Math.max(x.length, y.length); i++) if ((x[i] ?? 0) !== (y[i] ?? 0)) return (x[i] ?? 0) > (y[i] ?? 0) ? 1 : -1;
+  return 0;
+}
+
 export const sha = (s, n = 10) => crypto.createHash("sha1").update(s).digest("hex").slice(0, n);
 export const norm = (s) => String(s ?? "").replace(/\s+/g, " ").trim();
 export const sh = (cmd, args, cwd) => spawnSync(cmd, args, { cwd, encoding: "utf8", maxBuffer: 256 * 1024 * 1024 });

@@ -13,6 +13,27 @@ if (args[0] === "models") {
   console.log("fake-fast\tFake Fast (Low)\nfake-deep\tFake Deep (High)");
   process.exit(0);
 }
+// --effort rules, in the exact wording agy uses. FAKE_AGY_EFFORTS maps a model id (or "default") to
+// an array of allowed efforts, "in-id" (effort is part of the name) or "none" (not supported).
+if (process.env.FAKE_AGY_CALLS) fs.appendFileSync(process.env.FAKE_AGY_CALLS, JSON.stringify(args) + "\n");
+const ei = args.indexOf("--effort");
+if (ei >= 0 && process.env.FAKE_AGY_EFFORTS) {
+  const effort = args[ei + 1];
+  const mi = args.indexOf("--model");
+  const model = mi >= 0 ? args[mi + 1] : "";
+  const spec = JSON.parse(process.env.FAKE_AGY_EFFORTS)[model || "default"];
+  let why = null;
+  if (spec === "in-id") why = `--model ${model} conflicts with --effort=${effort}`;
+  else if (spec === "none") why = `--effort is not supported for model "${model}"`;
+  else if (Array.isArray(spec) && !spec.includes(effort)) why = `fake-base has no "${effort}" effort (available: ${spec.join(", ")})`;
+  if (why) {
+    const msg = `invalid model selection (--model "${model}" --effort "${effort}"): ${why}`;
+    console.error(`error: ${msg}`);
+    console.log(JSON.stringify({ event: "result", result: { conversation_id: "", status: "ERROR", response: "", error: msg, duration_seconds: 0, num_turns: 0, usage: {} } }));
+    process.exit(1);
+  }
+  if (args.includes("-p") && args[args.indexOf("-p") + 1] === "x" && effort === "max") process.exit(0); // a probe that was accepted
+}
 let input = "";
 for await (const chunk of process.stdin) input += chunk;
 const prompt = input.trim() ? JSON.parse(input.trim().split("\n")[0]).message.content : "";

@@ -10,7 +10,7 @@
   <meta property="og:description" content="An independent reviewer that has to show its work.">
   <meta property="og:type" content="website">
   <link rel="icon" href="assets/favicon.svg" type="image/svg+xml">
-  <link rel="stylesheet" href="assets/style.css?v=1.0.0-2">
+  <link rel="stylesheet" href="assets/style.css?v=1.0.1">
   <script>
     // Apply the saved or system theme before first paint to avoid a flash.
     try { var t = localStorage.getItem("agyr-theme"); if (t) document.documentElement.dataset.theme = t; } catch (e) {}
@@ -45,6 +45,7 @@
         <a href="#features" data-i18n="nav.features">Features</a>
         <a href="#install" data-i18n="nav.install">Install</a>
         <a href="#security" data-i18n="nav.security">Security</a>
+        <a href="#graphify" data-i18n="nav.graphify">graphify</a>
         <a href="#faq" data-i18n="nav.faq">FAQ</a>
       </nav>
       <div class="tools">
@@ -172,6 +173,23 @@
       </div>
     </section>
 
+    <section class="sec hot" id="graphify">
+      <div class="wrap">
+        <p class="eyebrow" data-i18n="graphify.eyebrow">New in 1.0.1</p>
+        <h2 data-i18n="graphify.title">Stop paying Claude and Codex tokens to refresh your graphify graph</h2>
+        <p class="sub" data-i18n="graphify.sub">graphify updates now run on Antigravity, in the background, on every commit, merge, checkout and rebase. Your agent spends 0 tokens on them and you need no API key.</p>
+        <div class="grid g3">
+          <article class="card pad reveal"><span class="num" aria-hidden="true">1</span><h3 data-i18n="graphify.1.t">Pinned to a cheap model</h3><p data-i18n="graphify.1.d">graphify's backend is pinned to a local server backed by Antigravity, so it can never fall back to your Opus, Fable or Codex session.</p></article>
+          <article class="card pad reveal"><span class="num" aria-hidden="true">2</span><h3 data-i18n="graphify.2.t">A commit never waits</h3><p data-i18n="graphify.2.d">The hook starts the update in the background. In a real run git commit returned in 0.3 seconds and the graph updated in 22 seconds with one Antigravity call.</p></article>
+          <article class="card pad reveal"><span class="num" aria-hidden="true">3</span><h3 data-i18n="graphify.3.t">No write or exec rights</h3><p data-i18n="graphify.3.d">The model only reads text and answers text. graphify writes its own files, a prompt injection in a document cannot make the model do anything, and secrets are redacted.</p></article>
+        </div>
+        <div class="code-wrap reveal"><pre class="code" dir="ltr"><code>bun agy-review.mjs --graphify doctor
+bun agy-review.mjs --graphify setup --yes
+git commit -m "docs and code"     # returns at once; the graph updates itself on Antigravity</code></pre><button class="copy" type="button" data-copy aria-label="Copy"><svg class="ic" aria-hidden="true"><use href="#i-copy"/></svg><span data-i18n="ui.copy">Copy</span></button></div>
+        <p class="note" data-i18n="graphify.note">It uses your Antigravity quota, so it is cheaper, not free. Images are not extracted on this path.</p>
+      </div>
+    </section>
+
     <section class="sec" id="install">
       <div class="wrap">
         <h2 data-i18n="install.title">Install</h2>
@@ -268,6 +286,7 @@ bun agy-review.mjs --set models=gemini-3.8-flash-high,claude-sonnet-4-6</code></
           <details class="card"><summary data-i18n="faq.3.q">Is Bun faster than Node here?</summary><p data-i18n="faq.3.a">Not measurably. Startup was about 56 ms with Node and 64 ms with Bun on the author's Windows machine, and a review takes tens of seconds because of the model. Bun is the default, Node works the same.</p></details>
           <details class="card"><summary data-i18n="faq.4.q">Which model should I use?</summary><p data-i18n="faq.4.a">Run the models command and choose; the tool does not rank them for you. For critical code cross-check with two models: findings both report are marked.</p></details>
           <details class="card"><summary data-i18n="faq.5.q">What if Gemini refuses a security prompt?</summary><p data-i18n="faq.5.a">Its content filter sometimes does. If you did not pick a model, the tool retries once with a non-Gemini model and says so.</p></details>
+          <details class="card"><summary data-i18n="faq.7.q">How do I update to a new version?</summary><p data-i18n="faq.7.a">Run the update check, then update the plugin for your host and refresh the guard and the graphify hooks. The README has the exact commands for Claude Code, Codex and a plain clone.</p></details>
           <details class="card"><summary data-i18n="faq.6.q">Can an agent run it in a loop?</summary><p data-i18n="faq.6.a">Yes. Review, fix the P0 and P1 findings, review again with the previous report, and stop on exit code 0. Exit code 4 is not a pass.</p></details>
         </div>
       </div>
@@ -287,6 +306,6 @@ bun agy-review.mjs --set models=gemini-3.8-flash-high,claude-sonnet-4-6</code></
   </footer>
 
   <p class="sr" role="status" aria-live="polite" id="live"></p>
-  <script src="assets/app.js?v=1.0.0-2" defer></script>
+  <script src="assets/app.js?v=1.0.1" defer></script>
 </body>
 </html>

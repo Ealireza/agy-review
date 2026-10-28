@@ -20,6 +20,11 @@ export const VALIDATORS = {
   focus: (v) => String(v),
   // translation defaults
   to: (v) => String(v), variant: (v) => String(v), tone: (v) => String(v), audience: (v) => String(v), glossary: (v) => String(v),
+  // keeping a graphify graph fresh with Antigravity
+  graphifyModel: (v) => String(v),
+  graphifyEffort: (v) => (EFFORTS.includes(v) ? v : bad("graphifyEffort", EFFORTS)),
+  graphifyConcurrency: (v) => (/^\d+$/.test(String(v)) && +v >= 1 && +v <= 8 ? +v : bad("graphifyConcurrency", ["1-8"])),
+  graphifyLabels: (v) => (v === true || v === "true" ? true : v === false || v === "false" ? false : bad("graphifyLabels", ["true", "false"])),
 };
 function bad(key, allowed) { throw new UsageError(`Invalid value for ${key}. Allowed: ${allowed.join(", ")}`); }
 

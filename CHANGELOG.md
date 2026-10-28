@@ -1,5 +1,21 @@
 # Changelog
 
+## 1.0.1
+
+New
+
+- **graphify on Antigravity (`--graphify`, skills `agy-graphify` / `graphify`, command `/agy-review:graphify`):** keeps a graphify knowledge graph fresh through git hooks (`post-commit`, `post-merge`, `post-checkout`, `post-rewrite`) with **0 Claude or Codex tokens and no API key**. graphify's semantic extraction and community naming run on Antigravity through a small local OpenAI-compatible server; graphify's backend is pinned to it so it can never fall back to the coding agent. The model runs without the permission flag, so agy denies tool calls (agy's permission model, not an OS sandbox); documents are redacted for common secrets before they are sent. Actions: `setup`, `update`, `status`, `doctor`, `hook-install`, `hook-uninstall`, `rules`, `serve`. Settings: `graphifyModel`, `graphifyEffort`, `graphifyConcurrency`, `graphifyLabels`. See `docs/GRAPHIFY.md`
+- `--version` and `--update-check`; an update guide in the README
+- `--list-models` shows the `--effort` each model accepts (`--refresh` re-reads it)
+
+Fixed
+
+- **`--effort auto` could pick a value the model does not have** (`gemini-3.8-flash has no "xhigh" effort (available: low, medium, high)`). The effort is now matched to the model: agy is asked what each model accepts (a short check that is stopped as soon as agy answers, cached per model and agy version in `~/.agy-review-cache.json`), the value is brought to the nearest one the model accepts, models with the effort in their name and models without `--effort` are run without it, a stale cache is corrected from the error and retried once, and the report says what was really used (`effort.value`, `effort.reason`, `effort.per_model`)
+- Hardening after an independent Codex review: atomic update lock with an owner token, git-reported exclude path (custom `core.hooksPath`), a failed extraction exits 1 instead of 2, a failed community naming step is flagged `partial`, safer capability-cache writes, plain `password=` and `_authToken=` assignments are masked, Windows Python discovery next to `Scripts`
+- Documentation: translations rewritten with Codex in plain language, keeping terms such as agent, skill, hook, token and commit in English
+
+Tests: 73 automated tests (effort handling, the local server, hooks, the update flow with a fake graphify and a fake agy).
+
 ## 1.0.0
 
 Features

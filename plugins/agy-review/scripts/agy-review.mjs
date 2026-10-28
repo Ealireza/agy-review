@@ -5,14 +5,17 @@
 //   task      --task "instruction" | --preset translate --to <lang>                      -> plain text result
 // Safety: agentic reviews start agy with --dangerously-skip-permissions, so the read-only guard hook MUST be installed;
 // this script refuses to run them without it and reports any change to the working tree afterwards.
+import { spawnSync } from "node:child_process";
 import crypto from "node:crypto";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { agyVersion, listModels, resolveModel, runAgy } from "./lib/agy.mjs";
+import { agyVersion, effortCaps, listModels, resolveModel, runAgy } from "./lib/agy.mjs";
 import { CONFIG_KEYS, gitRoot, loadConfig, setConfig, unsetConfig, validate } from "./lib/config.mjs";
 import { effortForReview, effortForTask, resolveEffort } from "./lib/effort.mjs";
+import * as gfy from "./lib/graphify.mjs";
+import { startShim } from "./lib/shim.mjs";
 import { changeScope } from "./lib/gitscope.mjs";
 import { computeVerdict, countBySeverity, coverage, gateFails, ground, locateEvidence, order } from "./lib/ground.mjs";
 import { compareWithPrevious, mergeRuns, splitByConfidence } from "./lib/merge.mjs";
@@ -21,7 +24,7 @@ import { renderMarkdown } from "./lib/render.mjs";
 import { expandRelated, redactLine, redactLines, scan, secretFindings, securitySchemaPath } from "./lib/security.mjs";
 import { describeCandidates, findSymbol, langOf, parseRange, readSource } from "./lib/targets.mjs";
 import { buildInstruction, checkPreservation, loadGlossary, splitChunks } from "./lib/translate.mjs";
-import { EXIT, SECRET_PATH, UsageError, lastJsonObject, sha, sh } from "./lib/util.mjs";
+import { EXIT, SECRET_PATH, UsageError, compareVersions, lastJsonObject, sha, sh } from "./lib/util.mjs";
 
 const VERSION = JSON.parse(fs.readFileSync(path.join(ROOT, ".claude-plugin", "plugin.json"), "utf8")).version;
 const SELF = fileURLToPath(import.meta.url);
@@ -37,8 +40,9 @@ const fail = (msg, code = EXIT.error) => { err(msg); process.exit(code); };
 
 // ---------------------------------------------------------------- arguments
 
-const VALUE = new Set(["--base", "--commit", "--paths", "--file", "--lines", "--symbol", "--name", "--lang", "--start-line", "--context", "--focus", "--context-lines", "--model", "--models", "--effort", "--timeout", "--fail-on", "--min-confidence", "--format", "--output", "--previous", "--set", "--unset", "--task", "--input", "--respond-as", "--preset", "--to", "--from", "--variant", "--tone", "--audience", "--glossary", "--keep", "--notes"]);
-const BOOL = new Set(["--staged", "--stdin", "--agentic", "--security", "--related", "--no-related", "--strict", "--json", "--list-models", "--show-config", "--global", "--check", "--verify", "--install-guard", "--uninstall-guard", "--wait", "--background", "--help"]);
+const GRAPHIFY_ACTIONS = ["setup", "update", "status", "doctor", "hook-install", "hook-uninstall", "rules", "serve"];
+const VALUE = new Set(["--graphify", "--base", "--commit", "--paths", "--file", "--lines", "--symbol", "--name", "--lang", "--start-line", "--context", "--focus", "--context-lines", "--model", "--models", "--effort", "--timeout", "--fail-on", "--min-confidence", "--format", "--output", "--previous", "--set", "--unset", "--task", "--input", "--respond-as", "--preset", "--to", "--from", "--variant", "--tone", "--audience", "--glossary", "--keep", "--notes"]);
+const BOOL = new Set(["--version", "--update-check", "--detach", "--quiet", "--debug", "--full", "--keep-graphify-hook", "--yes", "--write-rules", "--restore-graphify", "--staged", "--stdin", "--agentic", "--security", "--related", "--no-related", "--strict", "--json", "--list-models", "--refresh", "--show-config", "--global", "--check", "--verify", "--install-guard", "--uninstall-guard", "--wait", "--background", "--help"]);
 
 export function parseArgs(argv) {
   const o = { words: [], files: [], inputs: [], set: [] };
@@ -62,6 +66,7 @@ export function parseArgs(argv) {
     if (o[flag] !== undefined) o[flag] = validate(key, o[flag]);
   }
   if (o.preset && o.preset !== "translate") throw new UsageError(`Unknown --preset '${o.preset}'. Available: translate`);
+  if (o.graphify && !GRAPHIFY_ACTIONS.includes(o.graphify)) throw new UsageError(`Unknown --graphify action '${o.graphify}'. Available: ${GRAPHIFY_ACTIONS.join(", ")}`);
   return o;
 }
 
@@ -81,11 +86,17 @@ Review options
   --fail-on none|critical|high|medium|low|nit   --min-confidence low|medium|high
   --format md|json (--json)  --output <file>  --previous <report.json>
 Models and settings
-  --list-models   --set key=value [--global]   --unset key [--global]   --show-config   (keys: ${CONFIG_KEYS.join(", ")})
+  --list-models [--refresh] (shows the --effort each model accepts, read from agy)   --set key=value [--global]   --unset key [--global]   --show-config   (keys: ${CONFIG_KEYS.join(", ")})
 Tasks (no repository, no tools)
   --task "<instruction>" [--input <file>]... [--stdin] [--respond-as "<format>"] [--format json] [--output <file>]
   --preset translate --to <lang> [--from l] [--variant v] [--tone t] [--audience a] [--glossary file] [--keep a,b] [--notes "..."] [--strict]
+graphify (keep a graphify graph fresh on Antigravity: no Claude/Codex tokens, no API key)
+  --graphify setup [--yes] [--write-rules] [--keep-graphify-hook]   check, install git hooks, (optionally) add the openai package
+  --graphify update [--full] [--detach] [--quiet] [--debug]          update the graph now (hooks call this with --detach --quiet)
+  --graphify status | doctor | hook-install | hook-uninstall [--restore-graphify] | rules [--write-rules] | serve
+  settings: graphifyModel, graphifyEffort (default low), graphifyConcurrency (default 3), graphifyLabels (default true)
 Setup
+  --version  --update-check (is a newer release on GitHub?)
   --check  --install-guard  --uninstall-guard  --verify
 Exit codes: 0 ok | 1 error | 2 usage/prerequisite | 3 tree modified during agentic review | 4 inconclusive/incomplete | 10 gate failed | 11 translation check failed (--strict)`;
 
@@ -317,6 +328,7 @@ async function review(o) {
   const before = agentic ? snapshot(cwd) : null;
   const t0 = Date.now();
   const runs = [];
+  const effortByModel = {}, effortNotes = []; // the effort each model really got: models differ in what --effort they accept
   try {
     for (let m of models) {
       const t = Date.now();
@@ -329,7 +341,8 @@ async function review(o) {
           r = await runAgy({ prompt, schemaPath, model: alt.id, effort: effort.effort, timeoutMin: timeout, cwd, agentic });
         }
       }
-      if (r.effortDropped) { effort.reason += "; this model does not support --effort, agy's default was used"; effort.effort = "model default"; }
+      effortByModel[m.name] = r.effortUsed ?? "model default";
+      if (r.effortNote) effortNotes.push(`${m.name}: ${r.effortNote}`);
       const report = lastJsonObject(r.response);
       if (!report || !Array.isArray(report.findings)) {
         err(`[agy-review] ${m.name}: ${r.timedOut ? `no answer within ${timeout + 1} minutes` : r.error ? `agy error: ${JSON.stringify(r.error)}` : "the reply was not the required JSON report"}`);
@@ -373,7 +386,10 @@ async function review(o) {
     target: { kind: target.kind, description: target.description, files: (isCode ? target.regions : target.scopes).filter((r) => r.role !== "context").map((r) => ({ file: r.label, line_start: r.start, line_end: r.end })) },
     mode: agentic ? "agentic-readonly" : "static",
     models: okRuns.map((r) => r.model),
-    effort: { value: effort.effort, reason: effort.reason, source: effort.source },
+    effort: (() => {
+      const used = [...new Set(Object.values(effortByModel))];
+      return { value: used.length === 1 ? used[0] : "per model", reason: [effort.reason, ...effortNotes].join("; "), source: effort.source, ...(used.length > 1 ? { per_model: effortByModel } : {}) };
+    })(),
     verdict,
     model_verdicts: Object.fromEntries(okRuns.map((r) => [r.model, r.report.model_verdict])),
     summary: !okRuns.length ? "No model produced a review; only the secret scanner ran." : okRuns.length === 1 ? String(okRuns[0].report.summary ?? "") : okRuns.map((r) => `[${r.model}] ${r.report.summary ?? ""}`).join(" "),
@@ -424,9 +440,10 @@ async function task(o) {
     if (r.stderr) err(r.stderr);
     process.exit(EXIT.error);
   }
-  const text = o.format === "json" ? JSON.stringify({ schema: "agy-task/v1", tool_version: VERSION, model: m.name, effort: { value: effort.effort, reason: effort.reason, source: effort.source }, output: r.response, usage: r.usage }, null, 2) : r.response;
+  const used = r.effortUsed ?? "model default", why = [effort.reason, r.effortNote].filter(Boolean).join("; ");
+  const text = o.format === "json" ? JSON.stringify({ schema: "agy-task/v1", tool_version: VERSION, model: m.name, effort: { value: used, reason: why, source: effort.source }, output: r.response, usage: r.usage }, null, 2) : r.response;
   if (o.output) fs.writeFileSync(o.output, text + "\n"); else out(text);
-  err(`[agy-review] task done: model ${m.name}, effort ${effort.effort} (${effort.reason})`);
+  err(`[agy-review] task done: model ${m.name}, effort ${used} (${why})`);
   process.exit(EXIT.ok);
 }
 
@@ -448,34 +465,42 @@ async function translate(o) {
   const [m] = modelList({ model: o.model }, cfg);
   const chunks = splitChunks(text, 8000);
   const done = [];
-  let usage = { input_tokens: 0, output_tokens: 0 };
+  let usage = { input_tokens: 0, output_tokens: 0 }, usedEffort = "model default", effortNote = "";
   for (const [i, chunk] of chunks.entries()) {
     const continuity = i && done.length ? `\n\nFor continuity only (do not repeat it), the previous part ended with:\n${done[done.length - 1].trim().split("\n").slice(-3).join("\n")}` : "";
     const r = await runAgy({ prompt: taskPrompt({ instruction: instruction + continuity, inputs: [{ name: "text", text: chunk }], format: "Output only the translation of the text in <input>, nothing else." }), schemaPath: null, model: m.id, effort: effort.effort, timeoutMin: o.timeout ?? cfg.timeout ?? 15, cwd, agentic: false });
     if (!r.response) { err(`[agy-review] translation failed on part ${i + 1}/${chunks.length}${r.timedOut ? " (timeout)" : r.error ? ": " + JSON.stringify(r.error) : ""}`); process.exit(EXIT.error); }
     done.push(r.response.replace(/^```[a-z]*\n([\s\S]*)\n```$/, (all, body) => (/^\s*```/m.test(chunk) ? all : body)));
     usage = { input_tokens: usage.input_tokens + (r.usage?.input_tokens ?? 0), output_tokens: usage.output_tokens + (r.usage?.output_tokens ?? 0) };
+    usedEffort = r.effortUsed ?? "model default"; effortNote = r.effortNote ?? "";
   }
   const result = done.map((d) => d.trimEnd()).join("\n\n") + "\n";
   const checks = checkPreservation(text, result);
   for (const i of checks.issues) err(`[agy-review] check failed: ${i.check}${i.note ? " - " + i.note : ""}${i.missing?.length ? ` | missing: ${i.missing.join(", ")}` : ""}${i.unexpected?.length ? ` | unexpected: ${i.unexpected.join(", ")}` : ""}`);
-  const body = o.format === "json" ? JSON.stringify({ schema: "agy-translate/v1", tool_version: VERSION, to, model: m.name, effort: { value: effort.effort, reason: effort.reason, source: effort.source }, chunks: chunks.length, output: result, checks, usage }, null, 2) : result;
+  const why = [effort.reason, effortNote].filter(Boolean).join("; ");
+  const body = o.format === "json" ? JSON.stringify({ schema: "agy-translate/v1", tool_version: VERSION, to, model: m.name, effort: { value: usedEffort, reason: why, source: effort.source }, chunks: chunks.length, output: result, checks, usage }, null, 2) : result;
   if (o.output) fs.writeFileSync(o.output, body.endsWith("\n") ? body : body + "\n"); else out(body);
-  err(`[agy-review] translated to ${to}: model ${m.name}, effort ${effort.effort} (${effort.reason}), ${chunks.length} part(s), preservation checks ${checks.ok ? "passed" : "FAILED"}${o.output ? `, saved to ${o.output}` : ""}`);
+  err(`[agy-review] translated to ${to}: model ${m.name}, effort ${usedEffort} (${why}), ${chunks.length} part(s), preservation checks ${checks.ok ? "passed" : "FAILED"}${o.output ? `, saved to ${o.output}` : ""}`);
   process.exit(!checks.ok && o.strict ? EXIT.checks : EXIT.ok);
 }
 
 // ---------------------------------------------------------------- models, settings, setup
 
-function models(o) {
+const describeCaps = (c, id) => !c ? "unknown" : c.kind === "list" ? `--effort ${c.values.join(" | ")}` : c.kind === "in-id" ? `effort is in the name (${/-(low|medium|high|xhigh|max)$/.exec(id ?? "")?.[1] ?? "fixed"})` : c.kind === "none" ? "no --effort" : "any --effort";
+
+async function models(o) {
   const list = listModels();
   const { values, sources } = loadConfig(process.cwd());
   const chosen = [values.model, ...(values.models ?? [])].filter(Boolean).map((s) => s.toLowerCase());
   const sel = (m) => chosen.includes(m.id.toLowerCase()) || chosen.includes(m.name.toLowerCase());
-  if (o.format === "json") return out(JSON.stringify({ models: list.map((m) => ({ ...m, selected: sel(m) })), source: sources.model ?? sources.models }, null, 2));
-  const w = Math.max(...list.map((m) => m.id.length));
-  for (const m of list) out(`${sel(m) ? "*" : " "} ${m.id.padEnd(w)}  ${m.name}`);
-  out(`\n* = selected (${sources.model ?? sources.models ?? "none; agy default is used"}). Choose with:  --set model=<id>   (add --global for all projects)\nCross-check with several:  --set models=<id>,<id>   or  --models <id>,<id>`);
+  // What each model accepts for --effort comes from agy itself (a free check, cached per model and agy version).
+  const caps = await Promise.all([...list.map((m) => effortCaps(m.id, { refresh: !!o.refresh })), effortCaps(undefined, { refresh: !!o.refresh })]);
+  const defaultCaps = caps.pop();
+  if (o.format === "json") return out(JSON.stringify({ models: list.map((m, i) => ({ ...m, selected: sel(m), effort: caps[i] })), default_model_effort: defaultCaps, source: sources.model ?? sources.models }, null, 2));
+  const w = Math.max(...list.map((m) => m.id.length), 12);
+  for (const [i, m] of list.entries()) out(`${sel(m) ? "*" : " "} ${m.id.padEnd(w)}  ${m.name}  [${describeCaps(caps[i], m.id)}]`);
+  out(`  ${"(no --model)".padEnd(w)}  agy's own default model  [${describeCaps(defaultCaps, undefined)}]`);
+  out(`\n* = selected (${sources.model ?? sources.models ?? "none; agy default is used"}). Choose with:  --set model=<id>   (add --global for all projects)\nCross-check with several:  --set models=<id>,<id>   or  --models <id>,<id>\nThe effort a run asks for is always adjusted to what its model accepts, and the report says what was used.`);
 }
 
 function settings(o) {
@@ -485,10 +510,10 @@ function settings(o) {
     if (i < 1) throw new UsageError(`--set expects key=value, got '${kv}'`);
     const key = kv.slice(0, i).trim();
     let value = kv.slice(i + 1).trim();
-    if (key === "model" || key === "models") {
+    if (key === "model" || key === "models" || key === "graphifyModel") {
       const known = listModels();
       value = value.split(",").map((s) => resolveModel(s, known).id);
-      if (key === "model") value = value[0];
+      if (key !== "models") value = value[0];
     }
     const r = setConfig(cwd, key, value, { global: !!o.global });
     out(`Saved ${key} = ${JSON.stringify(r.value)}  (${r.path})`);
@@ -530,17 +555,115 @@ async function verify(o) {
   }
 }
 
+// ---------------------------------------------------------------- graphify
+
+async function graphifyCmd(o) {
+  const cwd = process.cwd();
+  const root = gitRoot(cwd) ?? cwd;
+  const cfg = loadConfig(cwd).values;
+  const settings = { model: o.model ?? cfg.graphifyModel, effort: o.effort && o.effort !== "auto" ? o.effort : cfg.graphifyEffort ?? "low", concurrency: cfg.graphifyConcurrency ?? 3, labels: cfg.graphifyLabels };
+  const table = (rows) => rows.forEach((r) => out(`${r.ok ? "OK  " : "FAIL"}  ${r.name}: ${r.detail}`));
+  const pluginRoot = ROOT;
+  switch (o.graphify) {
+    case "doctor": { const rows = gfy.doctor(root); table(rows); process.exit(rows.every((r) => r.ok || r.name === "graph built") ? EXIT.ok : EXIT.usage); break; }
+    case "update": {
+      if (settings.model) settings.model = resolveModel(settings.model, listModels()).id;
+      if (o.detach && !process.env.AGY_GRAPHIFY_CHILD) { // a git hook must never wait for a model
+        if (!fs.existsSync(path.join(root, "graphify-out", "graph.json")) && !o.full) process.exit(EXIT.ok);
+        const rest = process.argv.slice(2).filter((a) => a !== "--detach");
+        const pid = gfy.detach([SELF, ...rest], { AGY_GRAPHIFY_CHILD: "1" });
+        if (!o.quiet) out(`graphify update started in the background (pid ${pid}); log: graphify-out/.agy-update.log`);
+        process.exit(EXIT.ok);
+      }
+      const r = await gfy.update({ root, settings, full: !!o.full, quiet: !!o.quiet, debug: !!o.debug });
+      if (r.skipped) { if (!o.quiet) out(`graphify update skipped: ${r.skipped}`); process.exit(EXIT.ok); }
+      if (!o.quiet) out(`graphify updated in ${r.duration_s}s on Antigravity (${r.agy_calls} call(s), ${r.input_tokens} in / ${r.output_tokens} out tokens). Claude/Codex tokens used: 0.\n${r.summary}\n${r.steps}`);
+      process.exit(EXIT.ok);
+      break;
+    }
+    case "hook-install": {
+      const r = await gfy.hookInstall({ root, pluginRoot, keepGraphifyHook: !!o["keep-graphify-hook"] });
+      out(`Installed agy-graphify hooks:\n${r.hooks.map((h) => "  " + h).join("\n")}\nRuntime copy: ${r.runtime}\n${r.notes.join("\n")}`);
+      return;
+    }
+    case "hook-uninstall": { const r = await gfy.hookUninstall({ root, restoreGraphify: !!o["restore-graphify"] }); out(`Removed from: ${r.removed.join(", ") || "(nothing installed)"}${r.restored ? "\ngraphify's own hooks were restored." : ""}`); return; }
+    case "status": {
+      const s = gfy.hookStatus(root);
+      table(gfy.doctor(root));
+      out(`\nGit hooks (ours = Antigravity updater, graphify = graphify's own AST-only hook):`);
+      for (const r of s.rows) out(`  ${r.event.padEnd(14)} ours: ${r.ours ? "yes" : "no "}   graphify: ${r.graphify ? "yes" : "no"}`);
+      out(`Runtime copy for hooks: ${s.runtimeInstalled ? "installed" : "missing (run --graphify setup)"}`);
+      out(s.last ? `Last update: ${s.last.ok ? `${s.last.at}, ${s.last.duration_s}s, ${s.last.agy_calls} agy call(s), ${s.last.input_tokens}/${s.last.output_tokens} tokens, ${s.last.summary || s.last.steps}` : `FAILED ${s.last.at}: ${s.last.error}`}` : "Last update: never");
+      for (const r of gfy.ruleFiles(root)) if (r.exists) out(`${r.file}: ${r.hasOurRule ? "has the agy-graphify rule" : r.hasGraphifySection ? "has a graphify section that tells the agent to rebuild the graph itself (costs its tokens); add the rule with --graphify rules --write-rules" : "no graphify section"}`);
+      return;
+    }
+    case "rules": {
+      if (o["write-rules"]) { const w = gfy.writeRules(root); out(w.length ? `Added the rule to: ${w.join(", ")}` : "No CLAUDE.md or AGENTS.md here; nothing written."); } else out(gfy.AGENT_RULE);
+      return;
+    }
+    case "serve": {
+      if (settings.model) settings.model = resolveModel(settings.model, listModels()).id;
+      const shim = await startShim({ model: settings.model, effort: settings.effort, concurrency: settings.concurrency, timeoutMin: 15, cwd: root });
+      out(`OpenAI-compatible server on Antigravity: ${shim.url}\nUse it from any tool:\n  OPENAI_BASE_URL=${shim.url}\n  OPENAI_API_KEY=${shim.token}\n  (model name: agy, or agy:<agy model id>)\nPress Ctrl+C to stop.`);
+      await new Promise(() => {});
+      break;
+    }
+    case "setup": {
+      let rows = gfy.doctor(root);
+      const missingPkg = rows.find((r) => r.name.startsWith("openai package") && !r.ok);
+      if (missingPkg && o.yes) {
+        const uv = sh("uv", ["--version"]);
+        const cmd = uv.status === 0 ? ["uv", ["tool", "install", "--force", "graphifyy[openai]"]] : ["pipx", ["inject", "graphifyy", "openai"]];
+        out(`Adding the openai package to graphify's environment: ${cmd[0]} ${cmd[1].join(" ")}`);
+        const r = spawnSync(cmd[0], cmd[1], { stdio: "inherit" });
+        if (r.status !== 0) throw new UsageError("Could not add the openai package. Run it yourself, then repeat --graphify setup.");
+        rows = gfy.doctor(root);
+      }
+      table(rows);
+      const blocking = rows.filter((r) => !r.ok && r.name !== "graph built");
+      if (blocking.length) { out("\nFix the items marked FAIL (or pass --yes to add the openai package), then run --graphify setup again."); process.exit(EXIT.usage); }
+      const r = await gfy.hookInstall({ root, pluginRoot, keepGraphifyHook: !!o["keep-graphify-hook"] });
+      out(`\nInstalled hooks: ${r.hooks.map((h) => path.basename(h)).join(", ")}\n${r.notes.join("\n")}`);
+      if (o["write-rules"]) out(`Agent rule added to: ${gfy.writeRules(root).join(", ") || "(no CLAUDE.md / AGENTS.md)"}`);
+      else for (const f of gfy.ruleFiles(root)) if (f.exists && f.hasGraphifySection && !f.hasOurRule) out(`NOTE: ${f.file} has a graphify section that tells the agent to rebuild the graph itself. Add the rule that stops it: --graphify rules --write-rules`);
+      out(rows.find((r) => r.name === "graph built")?.ok ? "\nDone. From now on every commit, merge, checkout and rebase updates the graph on Antigravity." : "\nDone. Build the first graph once (it reads every doc, so it takes a while):  --graphify update --full");
+      return;
+    }
+  }
+}
+
+// ---------------------------------------------------------------- version and updates
+
+const UPDATE_URL = "https://raw.githubusercontent.com/Ealireza/agy-review/main/plugins/agy-review/.claude-plugin/plugin.json";
+
+async function updateCheck(o) {
+  let latest;
+  try {
+    const res = await fetch(process.env.AGY_REVIEW_UPDATE_URL || UPDATE_URL, { signal: AbortSignal.timeout(10_000) });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    latest = (await res.json()).version;
+  } catch (e) { fail(`Could not check for updates (${e.message}). Compare ${VERSION} with https://github.com/Ealireza/agy-review/releases by hand.`, EXIT.error); }
+  const cmp = compareVersions(latest, VERSION);
+  if (o.format === "json") out(JSON.stringify({ installed: VERSION, latest, update_available: cmp > 0 }));
+  else if (cmp > 0) out(`Update available: ${VERSION} -> ${latest}\n\nClaude Code (in a terminal, then restart Claude Code):\n  claude plugin marketplace update agy-review\n  claude plugin update agy-review@agy-review\nCodex:\n  codex plugin marketplace upgrade agy-review\n  codex plugin remove agy-review@agy-review && codex plugin add agy-review@agy-review\nPlain clone:  git pull\n\nThen:  --install-guard  and  --verify  (and  --graphify setup  if you use graphify hooks).`);
+  else out(`agy-review ${VERSION} is up to date.`);
+  process.exit(EXIT.ok);
+}
+
 // ---------------------------------------------------------------- main
 
 async function main() {
   const o = parseArgs(process.argv.slice(2));
   if (o.help) return out(HELP);
+  if (o.version) return out(`agy-review ${VERSION} (${RT} ${process.versions.bun ?? process.versions.node})`);
+  if (o["update-check"]) return updateCheck(o);
+  if (o.graphify) return graphifyCmd(o);
   if (o["install-guard"]) return installGuard();
   if (o["uninstall-guard"]) { fs.rmSync(GUARD_DIR, { recursive: true, force: true }); return out("Removed read-only guard."); }
   if (o.check) {
     const rows = prereqs();
     for (const [n, ok, d] of rows) out(`${ok ? "OK  " : "FAIL"}  ${n}: ${d}`);
-    out(`      runtime: ${RT} ${process.versions.bun ?? process.versions.node}`);
+    out(`      agy-review ${VERSION}, runtime: ${RT} ${process.versions.bun ?? process.versions.node}`);
     process.exit(rows.every((r) => r[1]) ? EXIT.ok : EXIT.usage);
   }
   if (o.verify) return verify(o);

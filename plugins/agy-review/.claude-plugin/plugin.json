@@ -1,6 +1,6 @@
 {
   "name": "agy-review",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "Code review of your local git changes by Google Antigravity (agy), with read-only repo access and no permission prompts.",
   "author": { "name": "Ealireza", "url": "https://github.com/Ealireza" },
   "homepage": "https://github.com/Ealireza/agy-review",

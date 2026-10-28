@@ -38,14 +38,90 @@ export function resolveModel(input, models) {
 
 // Runs one headless review. The prompt travels over stdin (no argv size limit).
 // agentic=true lets agy read the repository: it then needs --dangerously-skip-permissions, so the caller must have verified the guard.
+// ---------------------------------------------------------------- effort capabilities
+// Every model has its own idea of --effort: some take a list (the default model: low, medium, high), some have the effort in their
+// name (gemini-3.8-flash-high) and reject --effort, some (the Claude ones) do not support it at all. agy says which, in about four
+// seconds and before any billing, so we ask it instead of guessing, and remember the answer per model and agy version.
+
+export const EFFORT_SCALE = ["low", "medium", "high", "xhigh", "max"];
+const cachePath = () => path.join(os.homedir(), ".agy-review-cache.json");
+const readCache = () => { try { return JSON.parse(fs.readFileSync(cachePath(), "utf8")); } catch { return {}; } };
+
+// Reads agy's own validation message. Returns { kind: "list", values } | { kind: "in-id" } | { kind: "none" } | null (not an effort error).
+export function parseEffortError(text) {
+  const msg = String(text ?? "");
+  let m;
+  if ((m = /has no "?\w+"? effort \(available: ([^)]*)\)/.exec(msg))) return { kind: "list", values: m[1].split(",").map((s) => s.trim()).filter((s) => EFFORT_SCALE.includes(s)) };
+  if (/conflicts with --effort/.test(msg)) return { kind: "in-id" };
+  if (/--effort is not supported/.test(msg)) return { kind: "none" };
+  return null;
+}
+
+// Nearest value the model accepts: the highest allowed one not above the wish, else the lowest allowed one.
+export function clampEffort(desired, caps, model) {
+  const name = model || "the default model";
+  if (!caps || caps.kind === "all") return { effort: desired };
+  if (caps.kind === "none") return { effort: undefined, note: `${name} does not support --effort, its own default is used` };
+  if (caps.kind === "in-id") {
+    const built = /-(low|medium|high|xhigh|max)$/.exec(model ?? "")?.[1];
+    return { effort: undefined, builtIn: built, note: `effort is part of the model name${built ? ` (${built})` : ""}, so ${name} takes no --effort` };
+  }
+  const values = EFFORT_SCALE.filter((e) => caps.values.includes(e));
+  if (!values.length || values.includes(desired)) return { effort: desired };
+  const d = EFFORT_SCALE.indexOf(desired);
+  const below = values.filter((e) => EFFORT_SCALE.indexOf(e) <= d);
+  const effort = below.length ? below[below.length - 1] : values[0];
+  return { effort, note: `${desired} is not available for ${name} (it offers ${values.join(", ")}), so ${effort} is used` };
+}
+
+// Asks agy what the model accepts by requesting an effort no model here has ("max"). A model that does accept it starts a run,
+// which is killed at once.
+function probeCaps(model) {
+  return new Promise((resolve) => {
+    const args = ["--output-format", "stream-json", "--print-timeout", "1m", "-p", "x"];
+    if (model) args.push("--model", model);
+    args.push("--effort", "max");
+    const [c, a] = command(args);
+    const child = spawn(c, a, { stdio: ["ignore", "pipe", "pipe"] });
+    let buf = "", done = false;
+    const finish = (v) => { if (done) return; done = true; clearTimeout(timer); try { child.kill(); } catch { /* already gone */ } resolve(v); };
+    const timer = setTimeout(() => finish({ kind: "all" }), 12_000);
+    const on = (d) => { buf += d; const p = parseEffortError(buf); if (p) finish(p); };
+    child.stdout.on("data", on);
+    child.stderr.on("data", on);
+    child.on("error", () => finish(null));
+    child.on("close", () => finish(parseEffortError(buf) ?? null));
+  });
+}
+
+export async function effortCaps(model, { refresh = false } = {}) {
+  const key = `${agyVersion() ?? "?"}|${model || "default"}`;
+  const cache = readCache();
+  if (!refresh && cache[key]) return cache[key];
+  const caps = await probeCaps(model);
+  if (caps) {
+    try { fs.writeFileSync(cachePath(), JSON.stringify({ ...readCache(), [key]: caps }, null, 2)); } catch { /* read-only home: just do not cache */ }
+  }
+  return caps;
+}
+
 export async function runAgy(opts) {
-  const r = await runOnce(opts);
-  // Some models (for example the Claude ones) reject --effort. Retry once without it and say so; never fail a review over it.
-  if (opts.effort && r.status !== 0 && !r.response && /--effort[^\n]*not supported/i.test(`${r.stderr}\n${r.error ?? ""}`)) {
-    return { ...(await runOnce({ ...opts, effort: undefined })), effortDropped: true };
+  let note = null, builtIn = null, effort = opts.effort;
+  if (effort) {
+    const c = clampEffort(effort, await effortCaps(opts.model), opts.model);
+    ({ effort } = c); note = c.note ?? null; builtIn = c.builtIn ?? null;
+  }
+  let r = await runOnce({ ...opts, effort });
+  // The cached answer can be out of date (agy updated its models). Read the error, correct the cache and try once more.
+  const err = r.status !== 0 && !r.response ? parseEffortError(`${r.stderr}\n${r.error ?? ""}`) : null;
+  if (effort && err) {
+    try { const k = `${agyVersion() ?? "?"}|${opts.model || "default"}`; fs.writeFileSync(cachePath(), JSON.stringify({ ...readCache(), [k]: err }, null, 2)); } catch { /* not cached */ }
+    const c = clampEffort(opts.effort, err, opts.model);
+    ({ effort } = c); note = c.note ?? null; builtIn = c.builtIn ?? null;
+    r = await runOnce({ ...opts, effort });
   }
   // Gemini's content filter sometimes refuses security-related prompts. Surface it so the caller can choose another model.
-  return { ...r, filtered: /blocked by (gemini|the model)['’]?s? filters?/i.test(r.response) };
+  return { ...r, filtered: /blocked by (gemini|the model)['’]?s? filters?/i.test(r.response), effortUsed: effort ?? builtIn ?? null, effortNote: note };
 }
 
 function runOnce({ prompt, schemaPath, model, effort, timeoutMin, cwd, agentic }) {

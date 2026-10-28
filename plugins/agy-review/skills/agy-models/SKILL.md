@@ -20,6 +20,8 @@ Script: `bun "${CLAUDE_PLUGIN_ROOT}/scripts/agy-review.mjs" <option>`
    The name is validated against `agy models` before it is saved.
 4. **Check**: `--show-config` prints the effective settings and where each came from.
 
+`--list-models` also shows what each model accepts for `--effort`, read from agy itself: the default model offers a list (for example `low | medium | high`), models with the effort in their name (`gemini-3.8-flash-high`) take no `--effort`, and the Claude models do not support it. Whatever effort is asked for is brought to the nearest value the model accepts and the report says what was used; never guess a value yourself. `--refresh` asks agy again.
+
 Precedence for every run: command line, then project file, then user file, then agy's own default.
 
 Effort `auto` is deterministic and always explained: reviews use the amount of code in scope (and a risk-sensitive focus raises it one step); tasks look at the wording (mechanical transforms low, reasoning-heavy high) and the input length. `max` is never chosen automatically.

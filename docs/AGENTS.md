@@ -106,6 +106,12 @@ Tones: formal, neutral, friendly, casual, technical, marketing, literary, legal 
 
 `--effort auto` is a deterministic heuristic, not a model call. Reviews: under 40 lines in scope medium, under 300 high, more xhigh; a risk-sensitive focus (security, auth, crypto, concurrency, payments, migrations) adds one step; agentic reviews are at least high. Tasks: mechanical transforms (translate, rewrite, summarise, extract, classify) low; reasoning wording (design, analyse, compare, plan, debug, audit) high; otherwise medium; very long input adds a step. `max` is never chosen automatically. The chosen value and the reason are always reported.
 
+## 5b. Effort per model, and graphify
+
+`--effort` is matched to the model before every run (agy is asked what the model accepts; the answer is cached per model and agy version). The report's `effort` is `{value, reason, source}` and, for several models, `{value: "per model", per_model: {...}}`: `value` is what was really used (`model default` when the model takes no `--effort`). `--list-models --format json` returns `effort: {kind: "list"|"in-id"|"none"|"all", values}` per model.
+
+`--graphify <action>` keeps a graphify graph fresh on Antigravity (see `docs/GRAPHIFY.md`). Agents must not refresh a graph themselves: call `--graphify update --detach --quiet` and carry on. `--graphify serve` exposes a local OpenAI-compatible endpoint backed by agy for other tools.
+
 ## 6. Security review\n`--security` on any review target runs the security method (see `docs/SECURITY-REVIEW.md`). Extra finding fields: `owasp`, `cve` + `cve_verified` (always `false`), `exploitability`, `attack_scenario`, `data_flow`; extra report fields: `review_type: "security"`, `signals[]`, `related_code[]`. `--related` / `--no-related` control callers and callees as context (default on with `--security` for static targets). Hard-coded secrets are found by pattern, redacted before anything is sent, and reported as findings with `grounding: "pattern"`.\n\n## 7. Safety notes for agent authors
 - Everything you pass (code, text, glossary) is sent to Google's model. Do not pass secrets.
 - Static targets and tasks cannot touch the file system. Agentic reviews run agy with `--dangerously-skip-permissions` behind a deny-by-default guard hook that is not an OS sandbox; see the README security model. The script refuses to run them without the guard and warns (exit 3) if the working tree changed.

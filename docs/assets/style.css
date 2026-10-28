@@ -131,6 +131,13 @@ code { font-size: .9em; background: var(--muted); padding: .1em .4em; border-rad
 .list li::before { content: ""; position: absolute; inset-inline-start: 0; inset-block-start: .5em; width: .7rem; height: .7rem; border-radius: 50%; }
 .list.ok li::before { background: var(--accent); } .list.warn li::before { background: var(--warn); }
 
+/* graphify highlight: the one section that is allowed to shout */
+.sec.hot { background: linear-gradient(180deg, var(--accent-soft), transparent 70%); border-block: 1px solid color-mix(in srgb, var(--accent) 40%, var(--border)); }
+.sec.hot h2 { font-size: clamp(1.7rem, 3.6vw, 2.6rem); max-width: 28ch; }
+.sec.hot .eyebrow { margin-block-end: .6rem; }
+.sec.hot .code-wrap { margin-block-start: 1.4rem; border-radius: var(--r); overflow: hidden; }
+.sec.hot .note { margin-block-start: 1rem; }
+
 /* tabs */
 .tablist { display: flex; flex-wrap: wrap; gap: .4rem; margin-block-end: .8rem; }
 .tablist [role="tab"] { min-height: 44px; padding: .5rem 1rem; border-radius: 10px; border: 1px solid var(--border); background: var(--card); color: var(--fg-dim); font: 600 .9rem var(--sans); cursor: pointer; transition: background-color .2s, border-color .2s; }
