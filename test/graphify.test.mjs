@@ -212,7 +212,12 @@ test("hooks: a real commit triggers the background update (git runs the hook)", 
   assert.equal(c.status, 0, c.stderr);
   assert.ok(Date.now() - t0 < 8000, "the commit does not wait for the update");
   for (let i = 0; i < 150 && !s.status(); i++) await sleep(200);
-  assert.equal(s.status()?.ok, true, "the hook started an update that finished");
+  const why = () => {
+    const out = path.join(s.dir, "graphify-out"), read = (f) => { try { return fs.readFileSync(f, "utf8"); } catch (e) { return `(${e.code})`; } };
+    const manual = spawnSync("sh", [path.join(s.dir, ".git", "hooks", "post-commit")], { cwd: s.dir, env: s.env, encoding: "utf8" });
+    return `files: ${fs.readdirSync(out).join(",")}\nlog: ${read(path.join(out, ".agy-update.log"))}\nhook run by hand: ${manual.status} ${manual.stdout}${manual.stderr}\nhook:\n${read(path.join(s.dir, ".git", "hooks", "post-commit"))}`;
+  };
+  assert.equal(s.status()?.ok, true, `the hook started an update that finished\n${s.status() ? "" : why()}`);
   assert.equal(s.calls().find((c) => c.args[0] === "extract").backend, "ollama");
 });
 
