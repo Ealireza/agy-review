@@ -1,0 +1,16 @@
+{
+  "readonly-review": {
+    "PreToolUse": [
+      {
+        "matcher": "*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bun guard.mjs || node guard.mjs",
+            "timeout": 10
+          }
+        ]
+      }
+    ]
+  }
+}

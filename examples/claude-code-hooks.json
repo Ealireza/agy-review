@@ -1,0 +1,16 @@
+{
+  "_comment": "Merge the 'hooks' key into ~/.claude/settings.json (all projects) or .claude/settings.json (this project). Adjust the path to where you cloned agy-review.",
+  "hooks": {
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bun \"$HOME/agy-review/examples/security-gate-hook.mjs\" || node \"$HOME/agy-review/examples/security-gate-hook.mjs\"",
+            "timeout": 780
+          }
+        ]
+      }
+    ]
+  }
+}

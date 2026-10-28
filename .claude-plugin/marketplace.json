@@ -1,0 +1,14 @@
+{
+  "name": "agy-review",
+  "description": "Claude Code plugin that gets a read-only, prompt-free code review of your git changes from Google Antigravity (agy).",
+  "owner": { "name": "Ealireza" },
+  "plugins": [
+    {
+      "name": "agy-review",
+      "source": "./plugins/agy-review",
+      "description": "Antigravity (agy) code review of local git changes: read-only repo access, no permission prompts.",
+      "version": "1.0.0",
+      "author": { "name": "Ealireza" }
+    }
+  ]
+}

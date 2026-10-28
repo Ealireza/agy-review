@@ -1,0 +1,292 @@
+<!doctype html>
+<html lang="en" dir="ltr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>agy-review: an independent reviewer that has to show its work</title>
+  <meta name="description" content="Code review, security review, task delegation and translation by Google Antigravity, from Claude Code, Codex or your terminal. Read-only, no permission prompts, every finding checked against your real code.">
+  <meta name="color-scheme" content="dark light">
+  <meta property="og:title" content="agy-review">
+  <meta property="og:description" content="An independent reviewer that has to show its work.">
+  <meta property="og:type" content="website">
+  <link rel="icon" href="assets/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="assets/style.css?v=1.0.0-2">
+  <script>
+    // Apply the saved or system theme before first paint to avoid a flash.
+    try { var t = localStorage.getItem("agyr-theme"); if (t) document.documentElement.dataset.theme = t; } catch (e) {}
+  </script>
+</head>
+<body>
+  <svg width="0" height="0" style="position:absolute" aria-hidden="true" focusable="false">
+    <symbol id="i-copy" viewBox="0 0 24 24"><rect width="14" height="14" x="8" y="8" rx="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/></symbol>
+    <symbol id="i-check" viewBox="0 0 24 24"><path d="M20 6 9 17l-5-5"/></symbol>
+    <symbol id="i-sun" viewBox="0 0 24 24"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2m-7.07-2.93 1.41-1.41m11.32-11.32 1.41-1.41M2 12h2m16 0h2M4.93 4.93l1.41 1.41m11.32 11.32 1.41 1.41"/></symbol>
+    <symbol id="i-moon" viewBox="0 0 24 24"><path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z"/></symbol>
+    <symbol id="i-menu" viewBox="0 0 24 24"><path d="M4 6h16M4 12h16M4 18h16"/></symbol>
+    <symbol id="i-shield" viewBox="0 0 24 24"><path d="M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z"/></symbol>
+    <symbol id="i-branch" viewBox="0 0 24 24"><path d="M6 3v12"/><circle cx="18" cy="6" r="3"/><circle cx="6" cy="18" r="3"/><path d="M18 9a9 9 0 0 1-9 9"/></symbol>
+    <symbol id="i-loop" viewBox="0 0 24 24"><path d="m17 2 4 4-4 4"/><path d="M3 11v-1a4 4 0 0 1 4-4h14"/><path d="m7 22-4-4 4-4"/><path d="M21 13v1a4 4 0 0 1-4 4H3"/></symbol>
+    <symbol id="i-cpu" viewBox="0 0 24 24"><rect width="16" height="16" x="4" y="4" rx="2"/><rect width="6" height="6" x="9" y="9" rx="1"/><path d="M15 2v2M15 20v2M2 15h2M2 9h2M20 15h2M20 9h2M9 2v2M9 20v2"/></symbol>
+    <symbol id="i-lang" viewBox="0 0 24 24"><path d="m5 8 6 6M4 14l6-6 2-3M2 5h12M7 2h1M22 22l-5-10-5 10M14 18h6"/></symbol>
+    <symbol id="i-users" viewBox="0 0 24 24"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75"/></symbol>
+    <symbol id="i-search" viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></symbol>
+  </svg>
+
+  <a class="skip" href="#main" data-i18n="ui.skip">Skip to content</a>
+
+  <header class="top">
+    <div class="wrap bar">
+      <a class="brand" href="#top" aria-label="agy-review">
+        <span class="mark" aria-hidden="true">&gt;_</span><span class="name">agy-review</span>
+      </a>
+      <nav class="nav" id="nav" aria-label="Main">
+        <a href="#trust" data-i18n="nav.trust">Trust</a>
+        <a href="#how" data-i18n="nav.how">How it works</a>
+        <a href="#features" data-i18n="nav.features">Features</a>
+        <a href="#install" data-i18n="nav.install">Install</a>
+        <a href="#security" data-i18n="nav.security">Security</a>
+        <a href="#faq" data-i18n="nav.faq">FAQ</a>
+      </nav>
+      <div class="tools">
+        <label class="sr" for="lang" data-i18n="ui.lang">Language</label>
+        <select id="lang" class="select" aria-label="Language">
+          <option value="en">English</option>
+          <option value="fa">فارسی</option>
+          <option value="zh-CN">简体中文</option>
+          <option value="ru">Русский</option>
+          <option value="es">Español</option>
+          <option value="ar">العربية</option>
+          <option value="tr">Türkçe</option>
+          <option value="ja">日本語</option>
+          <option value="ko">한국어</option>
+          <option value="pt-BR">Português (BR)</option>
+          <option value="de">Deutsch</option>
+          <option value="fr">Français</option>
+        </select>
+        <button class="icon-btn" id="theme" type="button" aria-label="Toggle light and dark theme" data-i18n-attr="aria-label:ui.theme">
+          <svg class="ic ic-moon" aria-hidden="true"><use href="#i-moon"/></svg>
+          <svg class="ic ic-sun" aria-hidden="true"><use href="#i-sun"/></svg>
+        </button>
+        <a class="btn btn-ghost gh" href="https://github.com/Ealireza/agy-review" rel="noopener"><svg class="ic" aria-hidden="true"><use href="#i-branch"/></svg><span data-i18n="ui.github">GitHub</span></a>
+        <button class="icon-btn menu" id="menu" type="button" aria-label="Menu" aria-expanded="false" aria-controls="nav" data-i18n-attr="aria-label:ui.menu"><svg class="ic" aria-hidden="true"><use href="#i-menu"/></svg></button>
+      </div>
+    </div>
+  </header>
+
+  <main id="main">
+    <section class="hero" id="top">
+      <div class="wrap hero-grid">
+        <div class="hero-copy">
+          <p class="eyebrow" data-i18n="hero.eyebrow">Open source, MIT</p>
+          <h1 data-i18n="hero.title">An independent reviewer that has to show its work</h1>
+          <p class="lede" data-i18n="hero.sub">Code review, security review, task delegation and translation by Google Antigravity. From Claude Code, Codex or your terminal. Read-only, no permission prompts, and every finding is checked against your real code.</p>
+          <div class="cta">
+            <a class="btn btn-primary" href="#install" data-i18n="hero.cta1">Install in one minute</a>
+            <a class="btn btn-ghost" href="https://github.com/Ealireza/agy-review" rel="noopener" data-i18n="hero.cta2">View on GitHub</a>
+          </div>
+          <ul class="chips">
+            <li data-i18n="hero.chip1">Findings re-checked in your files</li>
+            <li data-i18n="hero.chip2">Exit codes for agents and CI</li>
+            <li data-i18n="hero.chip3">12 languages</li>
+          </ul>
+          <p class="note" data-i18n="hero.note">Runs on Bun or Node 18.18+. Your code is sent to Google's model: review only what you may share.</p>
+        </div>
+        <div class="card term" role="group" aria-labelledby="term-t">
+          <div class="term-bar"><span class="dots" aria-hidden="true"><i></i><i></i><i></i></span><span id="term-t" data-i18n="term.title">Quick start</span></div>
+          <div class="code-wrap">
+            <pre class="code" dir="ltr"><code>/plugin marketplace add Ealireza/agy-review
+/plugin install agy-review@agy-review
+/agy-review:setup
+/agy-review:verify
+/agy-review:security --symbol saveUpload</code></pre>
+            <button class="copy" type="button" data-copy aria-label="Copy"><svg class="ic" aria-hidden="true"><use href="#i-copy"/></svg><span data-i18n="ui.copy">Copy</span></button>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="sec" id="trust">
+      <div class="wrap">
+        <h2 data-i18n="trust.title">Why the report is trustworthy</h2>
+        <p class="sub" data-i18n="trust.sub">A model that reviews code will sometimes invent a problem. This tool never takes its word for anything.</p>
+        <div class="grid g4">
+          <article class="card pad reveal"><span class="num" aria-hidden="true">1</span><h3 data-i18n="trust.1.t">Quote it or it did not happen</h3><p data-i18n="trust.1.d">Every finding must carry the exact code it is about. The script looks that quote up in the real file.</p></article>
+          <article class="card pad reveal"><span class="num" aria-hidden="true">2</span><h3 data-i18n="trust.2.t">Not found means rejected</h3><p data-i18n="trust.2.d">Invented findings are dropped and listed separately. A wrong line number is corrected, not trusted.</p></article>
+          <article class="card pad reveal"><span class="num" aria-hidden="true">3</span><h3 data-i18n="trust.3.t">The script decides</h3><p data-i18n="trust.3.d">The verdict, the counts and the CI gate are computed from verified findings only, never copied from the model.</p></article>
+          <article class="card pad reveal"><span class="num" aria-hidden="true">4</span><h3 data-i18n="trust.4.t">Nothing found is not approval</h3><p data-i18n="trust.4.d">If findings were rejected, coverage is low or a model failed, the verdict is inconclusive and the exit code is 4.</p></article>
+        </div>
+      </div>
+    </section>
+
+    <section class="sec alt" id="proof">
+      <div class="wrap">
+        <h2 data-i18n="proof.title">What a verified finding looks like</h2>
+        <p class="sub" data-i18n="proof.sub">Real output on a small file with planted bugs, reviewed by Claude Sonnet 4.6 through Antigravity.</p>
+        <div class="grid g2">
+          <article class="card finding ok reveal">
+            <p class="badge ok"><svg class="ic" aria-hidden="true"><use href="#i-check"/></svg><span data-i18n="proof.ok">Verified: this exact code exists at line 6</span></p>
+            <p class="meta" dir="ltr">app.py:6 &nbsp;[P0 | security | confidence high | CWE-89]</p>
+            <h3 dir="ltr">SQL injection via string concatenation in get_user</h3>
+            <p class="lbl" data-i18n="proof.evidence">Evidence</p>
+            <pre class="code small" dir="ltr"><code>cur.execute("SELECT * FROM users WHERE name = '" + name + "'")</code></pre>
+            <p class="lbl" data-i18n="proof.fix">Fix</p>
+            <pre class="code small" dir="ltr"><code>cur.execute("SELECT * FROM users WHERE name = ?", (name,))</code></pre>
+          </article>
+          <article class="card finding bad reveal">
+            <p class="badge bad"><svg class="ic" aria-hidden="true"><use href="#i-search"/></svg><span data-i18n="proof.bad">Rejected: the quoted code was not found in the file</span></p>
+            <p class="meta" dir="ltr">app.py &nbsp;[critical | P0]</p>
+            <h3 dir="ltr">Remote code execution via os.system</h3>
+            <p class="lbl" data-i18n="proof.evidence">Evidence</p>
+            <pre class="code small struck" dir="ltr"><code>os.system(command)</code></pre>
+            <p class="reason" dir="ltr">evidence quote not found in the cited file (possible hallucination)</p>
+          </article>
+        </div>
+      </div>
+    </section>
+
+    <section class="sec" id="how">
+      <div class="wrap">
+        <h2 data-i18n="how.title">How a review runs</h2>
+        <p class="sub" data-i18n="how.sub">Five steps, one script. Static targets never give the model any tool.</p>
+        <ol class="steps">
+          <li class="card pad reveal"><span class="num" aria-hidden="true">1</span><h3 data-i18n="how.1.t">You ask</h3><p data-i18n="how.1.d">Review a diff, a branch, a file, a line range, one function or a snippet.</p></li>
+          <li class="card pad reveal"><span class="num" aria-hidden="true">2</span><h3 data-i18n="how.2.t">The target is prepared</h3><p data-i18n="how.2.d">The script reads and numbers the code itself, or opens the repository behind a read-only guard.</p></li>
+          <li class="card pad reveal"><span class="num" aria-hidden="true">3</span><h3 data-i18n="how.3.t">Antigravity reviews</h3><p data-i18n="how.3.d">The model you chose returns a strict JSON report: severity, priority, category, evidence, fix.</p></li>
+          <li class="card pad reveal"><span class="num" aria-hidden="true">4</span><h3 data-i18n="how.4.t">Every claim is checked</h3><p data-i18n="how.4.d">Quotes are found in your files, lines are corrected, inventions are rejected, secrets are redacted.</p></li>
+          <li class="card pad reveal"><span class="num" aria-hidden="true">5</span><h3 data-i18n="how.5.t">You get a verdict</h3><p data-i18n="how.5.d">Markdown or JSON, stable finding ids, and an exit code that agents and CI can act on.</p></li>
+        </ol>
+      </div>
+    </section>
+
+    <section class="sec alt" id="features">
+      <div class="wrap">
+        <h2 data-i18n="feat.title">Built for people and for agents</h2>
+        <div class="grid g3">
+          <article class="card pad reveal"><svg class="ic ic-lg" aria-hidden="true"><use href="#i-branch"/></svg><h3 data-i18n="feat.1.t">Any target</h3><p data-i18n="feat.1.d">Uncommitted changes, a branch, a commit, a file, a line range, one function by name, or code piped in from memory.</p></article>
+          <article class="card pad reveal"><svg class="ic ic-lg" aria-hidden="true"><use href="#i-shield"/></svg><h3 data-i18n="feat.2.t">Security review</h3><p data-i18n="feat.2.d">OWASP and CWE mapping, exploitability, attack scenario, data flow, a secret and bad-pattern scanner, and the callers and callees of your code.</p></article>
+          <article class="card pad reveal"><svg class="ic ic-lg" aria-hidden="true"><use href="#i-loop"/></svg><h3 data-i18n="feat.3.t">Loops and CI</h3><p data-i18n="feat.3.d">Stable JSON, finding ids that survive line shifts, comparison with the previous report, and a gate: exit 10 when a verified high finding exists.</p></article>
+          <article class="card pad reveal"><svg class="ic ic-lg" aria-hidden="true"><use href="#i-cpu"/></svg><h3 data-i18n="feat.4.t">Models and effort</h3><p data-i18n="feat.4.d">List the models in your agy, pick one per project or globally, cross-check with several, and let effort be chosen automatically with the reason shown.</p></article>
+          <article class="card pad reveal"><svg class="ic ic-lg" aria-hidden="true"><use href="#i-lang"/></svg><h3 data-i18n="feat.5.t">Tasks and translation</h3><p data-i18n="feat.5.d">Hand any self-contained task to Antigravity. Translate with tone, audience and glossary, and verify that code, URLs and placeholders survived.</p></article>
+          <article class="card pad reveal"><svg class="ic ic-lg" aria-hidden="true"><use href="#i-users"/></svg><h3 data-i18n="feat.6.t">Sub-agents and skills</h3><p data-i18n="feat.6.d">Skills for Claude Code and Codex, plus reviewer, security and worker sub-agents that any larger process can call.</p></article>
+        </div>
+      </div>
+    </section>
+
+    <section class="sec" id="install">
+      <div class="wrap">
+        <h2 data-i18n="install.title">Install</h2>
+        <p class="sub" data-i18n="install.sub">Pick your host. Nothing else is required besides Antigravity, git and Bun or Node.</p>
+        <div class="tabs" data-tabs>
+          <div class="tablist" role="tablist" aria-label="Install">
+            <button role="tab" id="t1" aria-controls="p1" aria-selected="true" type="button" data-i18n="install.tab1">Claude Code</button>
+            <button role="tab" id="t2" aria-controls="p2" aria-selected="false" tabindex="-1" type="button" data-i18n="install.tab2">Codex</button>
+            <button role="tab" id="t3" aria-controls="p3" aria-selected="false" tabindex="-1" type="button" data-i18n="install.tab3">Terminal</button>
+            <button role="tab" id="t4" aria-controls="p4" aria-selected="false" tabindex="-1" type="button" data-i18n="install.tab4">Antigravity only</button>
+          </div>
+          <div class="card panel" role="tabpanel" id="p1" aria-labelledby="t1">
+            <div class="code-wrap"><pre class="code" dir="ltr"><code>/plugin marketplace add Ealireza/agy-review
+/plugin install agy-review@agy-review</code></pre><button class="copy" type="button" data-copy aria-label="Copy"><svg class="ic" aria-hidden="true"><use href="#i-copy"/></svg><span data-i18n="ui.copy">Copy</span></button></div>
+            <p class="small-note"><span data-i18n="install.then">Then, once:</span> <code dir="ltr">/agy-review:setup</code> <code dir="ltr">/agy-review:verify</code></p>
+            <p class="small-note" data-i18n="install.verify">Verify on your machine: reads work, writes are blocked.</p>
+          </div>
+          <div class="card panel" role="tabpanel" id="p2" aria-labelledby="t2" hidden>
+            <div class="code-wrap"><pre class="code" dir="ltr"><code>codex plugin marketplace add Ealireza/agy-review
+codex plugin add agy-review@agy-review</code></pre><button class="copy" type="button" data-copy aria-label="Copy"><svg class="ic" aria-hidden="true"><use href="#i-copy"/></svg><span data-i18n="ui.copy">Copy</span></button></div>
+            <p class="small-note" data-i18n="install.codex">Codex needs network access and write access to ~/.gemini/antigravity-cli in its sandbox. The skill tells you exactly what is missing and never widens permissions itself.</p>
+          </div>
+          <div class="card panel" role="tabpanel" id="p3" aria-labelledby="t3" hidden>
+            <div class="code-wrap"><pre class="code" dir="ltr"><code>git clone https://github.com/Ealireza/agy-review
+cd agy-review
+bun plugins/agy-review/scripts/agy-review.mjs --check
+bun plugins/agy-review/scripts/agy-review.mjs --install-guard
+bun plugins/agy-review/scripts/agy-review.mjs --verify</code></pre><button class="copy" type="button" data-copy aria-label="Copy"><svg class="ic" aria-hidden="true"><use href="#i-copy"/></svg><span data-i18n="ui.copy">Copy</span></button></div>
+          </div>
+          <div class="card panel" role="tabpanel" id="p4" aria-labelledby="t4" hidden>
+            <div class="code-wrap"><pre class="code" dir="ltr"><code>cp -r plugins/agy-review/antigravity-plugin/readonly-review ~/.gemini/config/plugins/
+agy plugin list</code></pre><button class="copy" type="button" data-copy aria-label="Copy"><svg class="ic" aria-hidden="true"><use href="#i-copy"/></svg><span data-i18n="ui.copy">Copy</span></button></div>
+            <p class="small-note" data-i18n="install.agy">The guard is a normal Antigravity plugin. It does nothing unless a prompt contains AGY_READONLY_REVIEW, so your own agy sessions are unchanged.</p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="sec alt" id="use">
+      <div class="wrap">
+        <h2 data-i18n="use.title">Use it</h2>
+        <p class="sub" data-i18n="use.sub">The same script behind every skill, command and sub-agent.</p>
+        <div class="grid g2">
+          <div class="reveal"><h3 class="cap" data-i18n="use.1">Review a function with its context</h3>
+            <div class="code-wrap"><pre class="code" dir="ltr"><code>bun agy-review.mjs --symbol applyDiscount \
+  --context "applies at most one coupon, never below 0" \
+  --format json --fail-on high --output review.json</code></pre><button class="copy" type="button" data-copy aria-label="Copy"><svg class="ic" aria-hidden="true"><use href="#i-copy"/></svg><span data-i18n="ui.copy">Copy</span></button></div></div>
+          <div class="reveal"><h3 class="cap" data-i18n="use.2">Security review that must pass</h3>
+            <div class="code-wrap"><pre class="code" dir="ltr"><code>bun agy-review.mjs --security --symbol saveUpload \
+  --context "filename and body come from an untrusted request" \
+  --fail-on high --previous sec.json --format json --output sec2.json
+# exit 0 pass | 10 fix P0/P1 | 4 inconclusive, not a pass</code></pre><button class="copy" type="button" data-copy aria-label="Copy"><svg class="ic" aria-hidden="true"><use href="#i-copy"/></svg><span data-i18n="ui.copy">Copy</span></button></div></div>
+          <div class="reveal"><h3 class="cap" data-i18n="use.3">Translate with tone and a glossary</h3>
+            <div class="code-wrap"><pre class="code" dir="ltr"><code>bun agy-review.mjs --preset translate --to German --tone friendly \
+  --audience "new developers" --glossary glossary.json \
+  --input README.md --output docs/README.de.md</code></pre><button class="copy" type="button" data-copy aria-label="Copy"><svg class="ic" aria-hidden="true"><use href="#i-copy"/></svg><span data-i18n="ui.copy">Copy</span></button></div></div>
+          <div class="reveal"><h3 class="cap" data-i18n="use.4">Choose the model once</h3>
+            <div class="code-wrap"><pre class="code" dir="ltr"><code>bun agy-review.mjs --list-models
+bun agy-review.mjs --set model=claude-sonnet-4-6
+bun agy-review.mjs --set models=gemini-3.8-flash-high,claude-sonnet-4-6</code></pre><button class="copy" type="button" data-copy aria-label="Copy"><svg class="ic" aria-hidden="true"><use href="#i-copy"/></svg><span data-i18n="ui.copy">Copy</span></button></div></div>
+        </div>
+      </div>
+    </section>
+
+    <section class="sec" id="security">
+      <div class="wrap">
+        <h2 data-i18n="sec.title">Honest about its limits</h2>
+        <p class="sub" data-i18n="sec.sub">Read this before you trust it with anything important.</p>
+        <div class="grid g2">
+          <article class="card pad reveal"><h3 data-i18n="sec.does.t">What it does</h3>
+            <ul class="list ok">
+              <li data-i18n="sec.does.1">Static reviews, tasks and translations run agy with no tools in an empty folder: it cannot read or write your files.</li>
+              <li data-i18n="sec.does.2">Agentic reviews run behind a deny-by-default guard hook, refuse to start without it, and warn if your working tree changed.</li>
+              <li data-i18n="sec.does.3">Hard-coded secrets are redacted before anything is sent to a model.</li>
+              <li data-i18n="sec.does.4">A CVE from a model is always labelled unverified. The tool never invents or confirms one.</li>
+            </ul></article>
+          <article class="card pad reveal"><h3 data-i18n="sec.not.t">What it is not</h3>
+            <ul class="list warn">
+              <li data-i18n="sec.not.1">Not an OS sandbox. The guard filters commands; a determined prompt injection in reviewed code could look for a gap.</li>
+              <li data-i18n="sec.not.2">Your code is sent to Google's model. Do not review what you may not share.</li>
+              <li data-i18n="sec.not.3">Findings can be wrong. No findings never means secure.</li>
+              <li data-i18n="sec.not.4">The agentic path with the real permission flag was not run by the author. Run verify once on your machine.</li>
+            </ul></article>
+        </div>
+      </div>
+    </section>
+
+    <section class="sec alt" id="faq">
+      <div class="wrap narrow">
+        <h2 data-i18n="faq.title">Questions</h2>
+        <div class="faq">
+          <details class="card"><summary data-i18n="faq.1.q">Does it change my code?</summary><p data-i18n="faq.1.a">No. Static modes cannot. Agentic mode blocks writes and warns if your tree differs afterwards. It never commits, stashes or checks anything out, and it never fixes findings itself.</p></details>
+          <details class="card"><summary data-i18n="faq.2.q">Does it cost money?</summary><p data-i18n="faq.2.a">The plugin is free and open source. Each review uses your own Antigravity quota.</p></details>
+          <details class="card"><summary data-i18n="faq.3.q">Is Bun faster than Node here?</summary><p data-i18n="faq.3.a">Not measurably. Startup was about 56 ms with Node and 64 ms with Bun on the author's Windows machine, and a review takes tens of seconds because of the model. Bun is the default, Node works the same.</p></details>
+          <details class="card"><summary data-i18n="faq.4.q">Which model should I use?</summary><p data-i18n="faq.4.a">Run the models command and choose; the tool does not rank them for you. For critical code cross-check with two models: findings both report are marked.</p></details>
+          <details class="card"><summary data-i18n="faq.5.q">What if Gemini refuses a security prompt?</summary><p data-i18n="faq.5.a">Its content filter sometimes does. If you did not pick a model, the tool retries once with a non-Gemini model and says so.</p></details>
+          <details class="card"><summary data-i18n="faq.6.q">Can an agent run it in a loop?</summary><p data-i18n="faq.6.a">Yes. Review, fix the P0 and P1 findings, review again with the previous report, and stop on exit code 0. Exit code 4 is not a pass.</p></details>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <footer class="foot">
+    <div class="wrap foot-in">
+      <p><strong>agy-review</strong> · <span data-i18n="foot.license">MIT licensed.</span> · <span data-i18n="foot.made">Made by Ealireza</span></p>
+      <nav aria-label="Footer">
+        <a href="https://github.com/Ealireza/agy-review" rel="noopener">GitHub</a>
+        <a href="https://github.com/Ealireza/agy-review/blob/main/docs/AGENTS.md" rel="noopener" data-i18n="foot.agents">Agents and loops</a>
+        <a href="https://github.com/Ealireza/agy-review/blob/main/docs/SECURITY-REVIEW.md" rel="noopener" data-i18n="foot.security">Security method</a>
+        <a href="https://github.com/Ealireza/agy-review#readme" rel="noopener" data-i18n="foot.docs">Docs</a>
+      </nav>
+    </div>
+  </footer>
+
+  <p class="sr" role="status" aria-live="polite" id="live"></p>
+  <script src="assets/app.js?v=1.0.0-2" defer></script>
+</body>
+</html>

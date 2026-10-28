@@ -1,0 +1,25 @@
+{
+  "name": "agy-review",
+  "version": "1.0.0",
+  "description": "Code review of your local git changes by Google Antigravity (agy), with read-only repo access and no permission prompts.",
+  "author": { "name": "Ealireza", "url": "https://github.com/Ealireza" },
+  "homepage": "https://github.com/Ealireza/agy-review",
+  "repository": "https://github.com/Ealireza/agy-review",
+  "license": "MIT",
+  "keywords": ["code-review", "antigravity", "agy", "gemini", "read-only"],
+  "skills": "./codex-skills/",
+  "commands": [],
+  "interface": {
+    "displayName": "Antigravity Review",
+    "shortDescription": "Read-only code review of your git changes by Antigravity.",
+    "longDescription": "Hands the current git repository to the Antigravity CLI (agy), which reads the code itself with read-only access and returns a graded review. Runs without permission prompts; a guard hook blocks writes, deletes, installs and network access.",
+    "developerName": "Ealireza",
+    "category": "Coding",
+    "capabilities": [],
+    "defaultPrompt": [
+      "Review my changes with Antigravity.",
+      "Ask Antigravity to review this branch against main.",
+      "Check that my Antigravity review setup is safe."
+    ]
+  }
+}
